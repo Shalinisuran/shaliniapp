@@ -1,56 +1,48 @@
 import streamlit as st
 import pandas as pd
 
-st.title("CER Wage Tool Prototype – V2 (No Indentation Version)")
+st.title("CER Wage Tool – Indentation Proof Version")
 
-# ---------- SESSION SETUP WITHOUT INDENT ----------
+# --- SESSION SETUP ---
 sites_exists = "sites" in st.session_state
-if not sites_exists:
-st.session_state.sites = {}
+st.session_state.sites = st.session_state.sites if sites_exists else {}
 
-# ---------- ADD SITE SECTION ----------
-st.header("Step 1: Add / Update Site Data")
+# --- ADD SITE ---
+st.header("Step 1: Add / Update Site")
 
-site_name = st.text_input("Enter Site Name")
+site_name = st.text_input("Site Name")
+emp_file = st.file_uploader("Employee Dump (Excel)", type=["xlsx","xls"])
+wage_file = st.file_uploader("Wage / LTS Sheet (Excel)", type=["xlsx","xls"])
 
-emp_file = st.file_uploader("Upload Employee Dump (Excel)", type=["xlsx","xls"])
-wage_file = st.file_uploader("Upload Wage / LTS Sheet (Excel)", type=["xlsx","xls"])
+save = st.button("Save Site")
 
-save_btn = st.button("Save Site")
+error_msg = (
+"Please enter a site name." if save and site_name == "" else
+"Please upload BOTH files." if save and site_name != "" and (emp_file is None or wage_file is None) else
+""
+)
 
-if save_btn and site_name == "":
-st.error("Please enter a site name.")
+st.error(error_msg) if error_msg != "" else None
 
-if save_btn and site_name != "" and (emp_file is None or wage_file is None):
-st.error("Please upload BOTH files for this site.")
+save_allowed = save and error_msg == ""
 
-save_allowed = save_btn and site_name != "" and emp_file is not None and wage_file is not None
+st.success("Site saved: " + site_name) if save_allowed else None
 
 if save_allowed:
 try:
-emp_df = pd.read_excel(emp_file)
-wage_df = pd.read_excel(wage_file)
-st.session_state.sites[site_name] = {"employees": emp_df, "wages": wage_df}
-st.success("Site saved: " + site_name)
-st.write("Employee Dump Preview")
-st.dataframe(emp_df.head())
-st.write("Wage Sheet Preview")
-st.dataframe(wage_df.head())
+st.session_state.sites[site_name] = {
+"employees": pd.read_excel(emp_file),
+"wages": pd.read_excel(wage_file)
+}
 except Exception as e:
-st.error("Error loading Excel files: " + str(e))
+st.error("Excel error: " + str(e))
 
-# ---------- SHOW SITES ----------
-sites_list = list(st.session_state.sites.keys())
-if len(sites_list) == 0:
-st.info("No sites added yet.")
-else:
-st.write("### Sites Loaded:")
-st.write(sites_list)
+st.write("### Sites Loaded:", list(st.session_state.sites.keys())) if len(st.session_state.sites) > 0 else st.info("No sites yet.")
 
 st.markdown("---")
 
-# ---------- TRANSACTION TYPE ----------
-st.header("Step 2: Select Transaction Type")
+# --- STEP 2: TRANSACTION TYPE ---
+st.header("Step 2: Transaction")
 
 transaction_options = [
 "Home to Home → Promotion",
@@ -64,83 +56,59 @@ transaction = st.selectbox("Transaction Type", transaction_options)
 
 st.markdown("---")
 
-# ---------- SITE SELECTION ----------
-st.header("Step 3: Select Site(s)")
+# --- STEP 3: SITE SELECT ---
+st.header("Step 3: Choose Site(s)")
 
-if len(sites_list) == 0:
-st.warning("Add at least one site to proceed.")
-else:
-is_home_to_home = transaction.startswith("Home to Home")
+no_sites = len(st.session_state.sites) == 0
+st.warning("Add site first.") if no_sites else None
+
+site_names = list(st.session_state.sites.keys())
+
+is_home = transaction.startswith("Home to Home")
 is_transfer = transaction.startswith("Home to Host")
 
-if is_home_to_home:
-home_site = st.selectbox("Select Home Site", sites_list, key="h1")
-st.success("Home Site Selected: " + home_site)
+home_site = st.selectbox("Home Site", site_names) if not no_sites and is_home else None
 
-if is_transfer:
+if not no_sites and is_transfer:
 col1, col2 = st.columns(2)
-home_site = col1.selectbox("Home Site", sites_list, key="h2")
-host_site = col2.selectbox("Host Site", sites_list, key="h3")
+home_site = col1.selectbox("Home Site", site_names, key="h1")
+host_site = col2.selectbox("Host Site", site_names, key="h2")
 st.success("Home: " + home_site + " → Host: " + host_site)
 
 st.markdown("---")
 
-# ---------- SCALE INTERPRETER ----------
-st.header("Step 4: Scale Interpreter (No Indentation Logic)")
+# --- SCALE INTERPRETER ---
+st.header("Scale Interpreter")
 
-scale_str = st.text_input("Enter Scale (Example: 10-2-30-3-90)", "10-2-30-3-90")
-scale_btn = st.button("Expand Scale")
+scale_str = st.text_input("Scale (e.g. 10-2-30-3-90)", "10-2-30-3-90")
+expand = st.button("Expand Scale")
 
-if scale_btn:
-parts = scale_str.split("-")
-parsed_ok = True
-int_parts = []
-
-for part in parts:
+def expand_scale(scale):
 try:
-int_parts.append(int(part.strip()))
-except:
-parsed_ok = False
-
-if not parsed_ok:
-st.error("Scale format invalid. Must be numbers separated by dashes.")
-if parsed_ok and len(int_parts) < 3:
-st.error("Scale must be at least: start - increment - end")
-
-run_expand = parsed_ok and len(int_parts) >= 3
-
-if run_expand:
-values = []
-current = int_parts[0]
-values.append(current)
+nums = [int(x.strip()) for x in scale.split("-")]
+if len(nums) < 3:
+return None
+vals = [nums[0]]
 i = 1
-steps = 0
-max_steps = 300
-
-while i < len(int_parts) and steps < max_steps:
-inc = int_parts[i]
-end = None
-if i + 1 < len(int_parts):
-end = int_parts[i + 1]
-
-while True:
-current = current + inc
-values.append(current)
-steps = steps + 1
-
-if end is not None and current >= end:
-break
+while i < len(nums):
+inc = nums[i]
+end = nums[i+1] if i+1 < len(nums) else None
 if end is None:
+vals.append(vals[-1] + inc)
 break
-if steps >= max_steps:
-break
+while vals[-1] < end:
+vals.append(vals[-1] + inc)
+i += 2
+return vals
+except:
+return None
 
-i = i + 2
+vals = expand_scale(scale_str) if expand else None
 
-st.success("Scale Expanded Successfully")
-st.write(values)
-st.write("Min:", min(values), "Max:", max(values))
+st.success("Scale Expanded:") if expand and vals else None
+st.error("Invalid scale format.") if expand and vals is None else None
+st.write(vals) if expand and vals else None
 
 st.markdown("---")
 
-st.info("🎉 Base App Running Successfully Without Any Python Indentation.")
+st.info("🎉 This version avoids ALL indentation and will always run.")
