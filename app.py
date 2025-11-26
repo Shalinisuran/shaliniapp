@@ -39,6 +39,7 @@ def interpret_scale(scale_str: str):
                 values.append(current)
                 break
 
+            # Increment up to end
             while current < end and steps < max_steps:
                 current += inc
                 values.append(current)
@@ -71,7 +72,7 @@ def get_site_data(site_name: str):
 
 
 # -------------------------------------------------------
-# 1. Transaction selection
+# 1. Transaction selection (always first)
 # -------------------------------------------------------
 st.subheader("Select Transaction Type")
 
@@ -90,17 +91,17 @@ need_two_sites = transaction.startswith("Home to Host")
 
 st.markdown("---")
 
+
 # -------------------------------------------------------
 # 2. Site selection / creation
 # -------------------------------------------------------
 st.subheader("Sites")
 
-# Home → Home transactions (including Promotion)
 home_site = None
 host_site = None
 
+# ------------ Home → Home (single site) ------------
 if not need_two_sites:
-    # Single-site transaction
     if len(sites) > 0:
         home_site = st.selectbox("Select Site", ["Add new site"] + sites)
     else:
@@ -138,7 +139,7 @@ if not need_two_sites:
     else:
         st.success(f"Using Site: {home_site}")
 
-# Home → Host (Transfer) – still just UI, logic later
+# ------------ Home → Host (two sites, UI only for now) ------------
 else:
     st.write("Home → Host Transfer")
 
@@ -149,8 +150,7 @@ else:
         home_site = "Add new site"
         host_site = "Add new site"
 
-    for label, chosen_key in [("Home", "home_add"), ("Host", "host_add")]:
-        chosen = home_site if label == "Home" else host_site
+    for label, chosen in [("Home", home_site), ("Host", host_site)]:
         if chosen == "Add new site":
             st.markdown(f"### Add {label} Site")
             site_name = st.text_input(f"{label} Site Name", key=f"{label}_name")
@@ -188,7 +188,7 @@ st.markdown("---")
 
 
 # -------------------------------------------------------
-# 3. HOME TO HOME → PROMOTION LOGIC
+# 3. HOME TO HOME → PROMOTION LOGIC (Basic + fitment cost)
 # -------------------------------------------------------
 if transaction.startswith("Home to Home") and "Promotion" in transaction and home_site and home_site != "Add new site":
     st.subheader("Home → Home Promotion – Upload Promotion List")
@@ -213,7 +213,7 @@ if transaction.startswith("Home to Home") and "Promotion" in transaction and hom
                 promo_df = None
 
             if promo_df is not None:
-                # Map columns in promotion file
+                # ----- Map columns in promotion file -----
                 promo_emp_col = find_column(promo_df, ["empid", "employeeid", "employee_no", "employeecode"])
                 promo_name_col = find_column(promo_df, ["name", "employeename"])
                 promo_curr_grade_col = find_column(promo_df, ["currentgrade", "grade", "presentgrade"])
@@ -226,7 +226,7 @@ if transaction.startswith("Home to Home") and "Promotion" in transaction and hom
                     )
                     st.write("Columns found:", list(promo_df.columns))
                 else:
-                    # Map columns in employee master
+                    # ----- Map columns in employee master (site) -----
                     emp_id_col = find_column(emp_df, ["empid", "employeeid", "employee_no", "employeecode"])
                     emp_grade_col = find_column(emp_df, ["grade", "empgrade"])
                     emp_basic_col = find_column(emp_df, ["basic", "basicpay", "currentbasic"])
@@ -238,7 +238,7 @@ if transaction.startswith("Home to Home") and "Promotion" in transaction and hom
                         )
                         st.write("Employee columns:", list(emp_df.columns))
                     else:
-                        # Map columns in wage/LTS sheet
+                        # ----- Map columns in wage/LTS sheet -----
                         wage_grade_col = find_column(wage_df, ["grade", "gradecode", "gradeid"])
                         wage_scale_col = find_column(wage_df, ["scale", "basicscale", "payscale", "pay_scale"])
 
@@ -249,7 +249,7 @@ if transaction.startswith("Home to Home") and "Promotion" in transaction and hom
                             )
                             st.write("Wage/LTS columns:", list(wage_df.columns))
                         else:
-                            # Merge promotion list with employee master for validation and current basic
+                            # 1) Merge STRICTLY on Employee ID
                             merged = promo_df.merge(
                                 emp_df[[emp_id_col, emp_grade_col, emp_basic_col]],
                                 left_on=promo_emp_col,
@@ -258,13 +258,30 @@ if transaction.startswith("Home to Home") and "Promotion" in transaction and hom
                                 suffixes=("", "_emp"),
                             )
 
-                            # Grade mismatch check
-                            grade_mismatch_mask = merged[promo_curr_grade_col] != merged[emp_grade_col]
-                            grade_mismatches = merged[grade_mismatch_mask]
+                            # Employee IDs that are not found in master
+                            missing_emp_mask = merged[emp_id_col].isna()
+                            missing_emp = merged[missing_emp_mask]
+
+                            if not missing_emp.empty:
+                                st.error(
+                                    "Some Employee IDs in the promotion file do not exist in the site employee master."
+                                )
+                                st.dataframe(
+                                    missing_emp[[promo_emp_col]].rename(
+                                        columns={promo_emp_col: "Employee ID (Not Found in Master)"}
+                                    )
+                                )
+
+                            # 2) Grade mismatch check only for matched IDs
+                            matched_rows = merged[~missing_emp_mask].copy()
+                            grade_mismatch_mask = matched_rows[promo_curr_grade_col] != matched_rows[emp_grade_col]
+                            grade_mismatches = matched_rows[grade_mismatch_mask]
 
                             if not grade_mismatches.empty:
-                                st.error("Grade mismatch found between promotion file and site employee master.")
-                                st.write("Mismatched rows:")
+                                st.error(
+                                    "Grade mismatch found between promotion file and site employee master "
+                                    "(for matched Employee IDs)."
+                                )
                                 st.dataframe(
                                     grade_mismatches[
                                         [promo_emp_col, promo_curr_grade_col, emp_grade_col]
@@ -277,21 +294,29 @@ if transaction.startswith("Home to Home") and "Promotion" in transaction and hom
                                     )
                                 )
                             else:
-                                st.success("All current grades in promotion file match the site employee data.")
+                                if missing_emp.empty:
+                                    st.success(
+                                        "All Employee IDs and current grades in promotion file match the site employee data."
+                                    )
+                                else:
+                                    st.info(
+                                        "For matched Employee IDs, current grades match. "
+                                        "Some IDs were not found in master (shown above)."
+                                    )
 
-                            # Proceed with fitment for rows where we have current basic and new grade
-                            valid_rows = merged[merged[emp_basic_col].notna()]
+                            # 3) Fitment only for matched IDs with valid current basic
+                            valid_rows = matched_rows[matched_rows[emp_basic_col].notna()]
 
                             if valid_rows.empty:
-                                st.error("No rows with valid current basic found for fitment.")
+                                st.error("No rows with valid current basic found for fitment (for matched Employee IDs).")
                             else:
                                 results = []
 
-                                # Build a dict of grade → scale list for quick use
+                                # Build grade → scale dict
                                 grade_to_scale = {}
-                                for _, row in wage_df[[wage_grade_col, wage_scale_col]].dropna().iterrows():
-                                    g = str(row[wage_grade_col]).strip()
-                                    s = str(row[wage_scale_col]).strip()
+                                for _, wrow in wage_df[[wage_grade_col, wage_scale_col]].dropna().iterrows():
+                                    g = str(wrow[wage_grade_col]).strip()
+                                    s = str(wrow[wage_scale_col]).strip()
                                     scale_vals = interpret_scale(s)
                                     if scale_vals:
                                         grade_to_scale[g] = sorted(set(scale_vals))
@@ -321,22 +346,16 @@ if transaction.startswith("Home to Home") and "Promotion" in transaction and hom
                                         )
                                         continue
 
-                                    # Fitment logic: place in the promoted scale
-                                    # If current basic in scale → keep
-                                    # Else → go to next higher basic in the scale
-                                    new_basic = None
-                                    remark = ""
-
+                                    # ----- Fitment logic on BASIC -----
                                     if curr_basic in scale_vals:
                                         new_basic = curr_basic
-                                        remark = "No fitment; already in scale"
+                                        remark = "No fitment; already in promoted scale"
                                     else:
                                         higher_vals = [v for v in scale_vals if v >= curr_basic]
                                         if higher_vals:
                                             new_basic = higher_vals[0]
                                             remark = "Fitted to next higher basic in promoted scale"
                                         else:
-                                            # Current basic above max scale: keep current basic, no negative fitment
                                             new_basic = curr_basic
                                             remark = "Above max scale; retained current basic"
 
@@ -365,7 +384,7 @@ if transaction.startswith("Home to Home") and "Promotion" in transaction and hom
 
 
 # -------------------------------------------------------
-# Final note
+# Footer note
 # -------------------------------------------------------
 st.markdown("---")
-st.info("Home → Home Promotion basic fitment engine is ready. Other allowances can be layered on top later.")
+st.info("Home → Home Promotion logic (based on Employee ID + Basic fitment) is ready. Other transactions can be added next.")
