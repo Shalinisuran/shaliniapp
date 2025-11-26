@@ -1,55 +1,56 @@
 import streamlit as st
 import pandas as pd
 
-# SESSION STORAGE FOR SITES
-if "sites" not in st.session_state:
+st.title("CER Wage Tool Prototype – V2 (No Indentation Version)")
+
+# ---------- SESSION SETUP WITHOUT INDENT ----------
+sites_exists = "sites" in st.session_state
+if not sites_exists:
 st.session_state.sites = {}
 
-st.title("CER Wage Tool Prototype – v1")
-st.write("✔ Sites\n✔ Transactions\n✔ Home→Home & Home→Host\n✔ Scale Interpreter\n")
-
+# ---------- ADD SITE SECTION ----------
 st.header("Step 1: Add / Update Site Data")
 
 site_name = st.text_input("Enter Site Name")
 
-emp_file = st.file_uploader("Upload Employee Dump (Excel)", type=["xlsx", "xls"])
-wage_file = st.file_uploader("Upload Wage / LTS Sheet (Excel)", type=["xlsx", "xls"])
+emp_file = st.file_uploader("Upload Employee Dump (Excel)", type=["xlsx","xls"])
+wage_file = st.file_uploader("Upload Wage / LTS Sheet (Excel)", type=["xlsx","xls"])
 
-save_clicked = st.button("Save Site")
+save_btn = st.button("Save Site")
 
-if save_clicked:
-if site_name == "":
+if save_btn and site_name == "":
 st.error("Please enter a site name.")
-if emp_file is None or wage_file is None:
-st.error("Please upload BOTH employee dump and wage sheet.")
-if site_name != "" and emp_file is not None and wage_file is not None:
+
+if save_btn and site_name != "" and (emp_file is None or wage_file is None):
+st.error("Please upload BOTH files for this site.")
+
+save_allowed = save_btn and site_name != "" and emp_file is not None and wage_file is not None
+
+if save_allowed:
 try:
 emp_df = pd.read_excel(emp_file)
 wage_df = pd.read_excel(wage_file)
-
-st.session_state.sites[site_name] = {
-"employees": emp_df,
-"wages": wage_df
-}
-
-st.success("Saved site: " + site_name)
+st.session_state.sites[site_name] = {"employees": emp_df, "wages": wage_df}
+st.success("Site saved: " + site_name)
 st.write("Employee Dump Preview")
 st.dataframe(emp_df.head())
 st.write("Wage Sheet Preview")
 st.dataframe(wage_df.head())
-
 except Exception as e:
-st.error("Error reading files: " + str(e))
+st.error("Error loading Excel files: " + str(e))
 
-if len(st.session_state.sites) > 0:
-st.write("### Sites Loaded:")
-st.write(list(st.session_state.sites.keys()))
+# ---------- SHOW SITES ----------
+sites_list = list(st.session_state.sites.keys())
+if len(sites_list) == 0:
+st.info("No sites added yet.")
 else:
-st.info("No sites loaded yet.")
+st.write("### Sites Loaded:")
+st.write(sites_list)
 
 st.markdown("---")
 
-st.header("Step 2: Choose Transaction Type")
+# ---------- TRANSACTION TYPE ----------
+st.header("Step 2: Select Transaction Type")
 
 transaction_options = [
 "Home to Home → Promotion",
@@ -63,54 +64,64 @@ transaction = st.selectbox("Transaction Type", transaction_options)
 
 st.markdown("---")
 
+# ---------- SITE SELECTION ----------
 st.header("Step 3: Select Site(s)")
 
-if len(st.session_state.sites) == 0:
-st.warning("Please add at least ONE site in Step 1 first.")
+if len(sites_list) == 0:
+st.warning("Add at least one site to proceed.")
 else:
-site_names = list(st.session_state.sites.keys())
+is_home_to_home = transaction.startswith("Home to Home")
+is_transfer = transaction.startswith("Home to Host")
 
-if transaction.startswith("Home to Home"):
-selected_home = st.selectbox("Select Home Site", site_names)
-st.success("Home Site Selected: " + selected_home)
+if is_home_to_home:
+home_site = st.selectbox("Select Home Site", sites_list, key="h1")
+st.success("Home Site Selected: " + home_site)
 
-if transaction.startswith("Home to Host"):
+if is_transfer:
 col1, col2 = st.columns(2)
-with col1:
-selected_home = st.selectbox("Home Site", site_names, key="home_site2")
-with col2:
-selected_host = st.selectbox("Host Site", site_names, key="host_site2")
-st.success("Home: " + selected_home + " → Host: " + selected_host)
+home_site = col1.selectbox("Home Site", sites_list, key="h2")
+host_site = col2.selectbox("Host Site", sites_list, key="h3")
+st.success("Home: " + home_site + " → Host: " + host_site)
 
 st.markdown("---")
 
-st.header("Step 4: Basic Scale Interpreter")
+# ---------- SCALE INTERPRETER ----------
+st.header("Step 4: Scale Interpreter (No Indentation Logic)")
 
-st.write("Enter scale string like: 10-2-30-3-90")
+scale_str = st.text_input("Enter Scale (Example: 10-2-30-3-90)", "10-2-30-3-90")
+scale_btn = st.button("Expand Scale")
 
-scale_str = st.text_input("Scale String", "10-2-30-3-90")
+if scale_btn:
+parts = scale_str.split("-")
+parsed_ok = True
+int_parts = []
 
-btn_expand = st.button("Expand Scale")
-
-if btn_expand:
-# SCALE INTERPRETER WITHOUT INDENTATION ISSUES
+for part in parts:
 try:
-parts = [int(x.strip()) for x in scale_str.split("-")]
-if len(parts) < 3:
-st.error("Invalid scale format. Minimum must be start-inc-end.")
-else:
+int_parts.append(int(part.strip()))
+except:
+parsed_ok = False
+
+if not parsed_ok:
+st.error("Scale format invalid. Must be numbers separated by dashes.")
+if parsed_ok and len(int_parts) < 3:
+st.error("Scale must be at least: start - increment - end")
+
+run_expand = parsed_ok and len(int_parts) >= 3
+
+if run_expand:
 values = []
-current = parts[0]
+current = int_parts[0]
 values.append(current)
 i = 1
 steps = 0
 max_steps = 300
 
-while i < len(parts) and steps < max_steps:
-inc = parts[i]
+while i < len(int_parts) and steps < max_steps:
+inc = int_parts[i]
 end = None
-if i + 1 < len(parts):
-end = parts[i + 1]
+if i + 1 < len(int_parts):
+end = int_parts[i + 1]
 
 while True:
 current = current + inc
@@ -126,13 +137,10 @@ break
 
 i = i + 2
 
-st.success("Scale Expanded")
+st.success("Scale Expanded Successfully")
 st.write(values)
 st.write("Min:", min(values), "Max:", max(values))
 
-except:
-st.error("Error interpreting scale. Please check your format.")
-
 st.markdown("---")
 
-st.info("🎉 Base app structure ready. Next: add logic for each transaction type.")
+st.info("🎉 Base App Running Successfully Without Any Python Indentation.")
