@@ -1,8 +1,8 @@
 import streamlit as st
 
 def main():
-st.title("Test Wage Tool App")
-st.write("✅ If you can see this message, the basic app is running correctly.")
+st.title("Indentation Test")
+st.write("If you see this, indentation is working.")
 
 if __name__ == "__main__":
 main()
