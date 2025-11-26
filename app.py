@@ -17,9 +17,9 @@ wage_file = st.file_uploader("Wage / LTS Sheet (Excel)", type=["xlsx","xls"])
 save = st.button("Save Site")
 
 error_msg = (
-"Please enter a site name." if save and site_name == "" else
-"Please upload BOTH files." if save and site_name != "" and (emp_file is None or wage_file is None) else
-""
+  "Please enter a site name." if save and site_name == "" else
+  "Please upload BOTH files." if save and site_name != "" and (emp_file is None or wage_file is None) else
+  ""
 )
 
 st.error(error_msg) if error_msg != "" else None
@@ -29,13 +29,13 @@ save_allowed = save and error_msg == ""
 st.success("Site saved: " + site_name) if save_allowed else None
 
 if save_allowed:
-try:
-st.session_state.sites[site_name] = {
-"employees": pd.read_excel(emp_file),
-"wages": pd.read_excel(wage_file)
-}
-except Exception as e:
-st.error("Excel error: " + str(e))
+    try:
+        st.session_state.sites[site_name] = {
+            "employees": pd.read_excel(emp_file),
+            "wages": pd.read_excel(wage_file)
+        }
+    except Exception as e:
+        st.error("Excel error: " + str(e))
 
 st.write("### Sites Loaded:", list(st.session_state.sites.keys())) if len(st.session_state.sites) > 0 else st.info("No sites yet.")
 
@@ -70,10 +70,10 @@ is_transfer = transaction.startswith("Home to Host")
 home_site = st.selectbox("Home Site", site_names) if not no_sites and is_home else None
 
 if not no_sites and is_transfer:
-col1, col2 = st.columns(2)
-home_site = col1.selectbox("Home Site", site_names, key="h1")
-host_site = col2.selectbox("Host Site", site_names, key="h2")
-st.success("Home: " + home_site + " → Host: " + host_site)
+    col1, col2 = st.columns(2)
+    home_site = col1.selectbox("Home Site", site_names, key="h1")
+    host_site = col2.selectbox("Host Site", site_names, key="h2")
+    st.success("Home: " + home_site + " → Host: " + host_site)
 
 st.markdown("---")
 
@@ -84,24 +84,24 @@ scale_str = st.text_input("Scale (e.g. 10-2-30-3-90)", "10-2-30-3-90")
 expand = st.button("Expand Scale")
 
 def expand_scale(scale):
-try:
-nums = [int(x.strip()) for x in scale.split("-")]
-if len(nums) < 3:
-return None
-vals = [nums[0]]
-i = 1
-while i < len(nums):
-inc = nums[i]
-end = nums[i+1] if i+1 < len(nums) else None
-if end is None:
-vals.append(vals[-1] + inc)
-break
-while vals[-1] < end:
-vals.append(vals[-1] + inc)
-i += 2
-return vals
-except:
-return None
+    try:
+        nums = [int(x.strip()) for x in scale.split("-")]
+        if len(nums) < 3:
+            return None
+        vals = [nums[0]]
+        i = 1
+        while i < len(nums):
+            inc = nums[i]
+            end = nums[i+1] if i+1 < len(nums) else None
+            if end is None:
+                vals.append(vals[-1] + inc)
+                break
+            while vals[-1] < end:
+                vals.append(vals[-1] + inc)
+            i += 2
+        return vals
+    except:
+        return None
 
 vals = expand_scale(scale_str) if expand else None
 
